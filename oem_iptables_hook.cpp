@@ -24,11 +24,10 @@
 
 #define LOG_TAG "OemIptablesHook"
 #include <cutils/log.h>
+#include "NetdConstants.h"
 
 extern "C" int system_nosh(const char *command);
 
-static char IPTABLES_PATH[] = "/system/bin/iptables";
-static char OEM_SCRIPT_PATH[] = "/system/bin/oem-iptables-init.sh";
 
 static int runIptablesCmd(const char *cmd) {
     char *buffer;
@@ -36,7 +35,7 @@ static int runIptablesCmd(const char *cmd) {
     int res;
 
     if (len == 255) {
-        LOGE("command too long");
+        ALOGE("command too long");
         return -1;
     }
 
@@ -94,7 +93,7 @@ static bool oemCleanupHooks() {
 static bool oemInitChains() {
     int ret = system(OEM_SCRIPT_PATH);
     if ((-1 == ret) || (0 != WEXITSTATUS(ret))) {
-        LOGE("%s failed: %s", OEM_SCRIPT_PATH, strerror(errno));
+        ALOGE("%s failed: %s", OEM_SCRIPT_PATH, strerror(errno));
         oemCleanupHooks();
         return false;
     }
@@ -108,7 +107,7 @@ void setupOemIptablesHook() {
         // but is needed for the case where netd has crashed/stopped and is
         // restarted.
         if (oemCleanupHooks() && oemSetupHooks() && oemInitChains()) {
-            LOGI("OEM iptable hook installed.");
+            ALOGI("OEM iptable hook installed.");
         }
     }
 }

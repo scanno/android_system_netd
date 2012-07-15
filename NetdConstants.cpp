@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,21 +14,12 @@
  * limitations under the License.
  */
 
-#ifndef _PAN_CONTROLLER_H
-#define _PAN_CONTROLLER_H
+#include "NetdConstants.h"
 
-#include <linux/in.h>
-
-class PanController {
-    pid_t mPid;
-
-public:
-    PanController();
-    virtual ~PanController();
-
-    int startPan();
-    int stopPan();
-    bool isPanStarted();
-};
-
-#endif
+const char * const OEM_SCRIPT_PATH = "/system/bin/oem-iptables-init.sh";
+const char * const IPTABLES_PATH = "/system/bin/iptables";
+const char * const IP6TABLES_PATH = "/system/bin/ip6tables";
+const char * const TC_PATH = "/system/bin/tc";
+const char * const IP_PATH = "/system/bin/ip";
+const char * const ADD = "add";
+const char * const DEL = "del";

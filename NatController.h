@@ -19,8 +19,6 @@
 
 #include <linux/in.h>
 
-#include <utils/List.h>
-
 #include "SecondaryTableController.h"
 
 class NatController {
@@ -31,6 +29,7 @@ public:
 
     int enableNat(const int argc, char **argv);
     int disableNat(const int argc, char **argv);
+    int setupIptablesHooks();
 
 private:
     int natCount;
@@ -40,7 +39,6 @@ private:
     int runCmd(const char *path, const char *cmd);
     bool checkInterface(const char *iface);
     int setForwardRules(bool set, const char *intIface, const char *extIface);
-    const char *getVersion(const char *addr);
 };
 
 #endif

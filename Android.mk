@@ -6,8 +6,11 @@ LOCAL_SRC_FILES:=                                      \
                   BandwidthController.cpp              \
                   CommandListener.cpp                  \
                   DnsProxyListener.cpp                 \
+                  MDnsSdListener.cpp                   \
+                  IdletimerController.cpp              \
                   NatController.cpp                    \
                   NetdCommand.cpp                      \
+                  NetdConstants.cpp                    \
                   NetlinkHandler.cpp                   \
                   NetlinkManager.cpp                   \
                   PanController.cpp                    \
@@ -27,13 +30,14 @@ LOCAL_MODULE:= netd
 LOCAL_C_INCLUDES := $(KERNEL_HEADERS) \
                     $(LOCAL_PATH)/../bluetooth/bluedroid/include \
                     $(LOCAL_PATH)/../bluetooth/bluez-clean-headers \
+                    external/mdnsresponder/mDNSShared \
                     external/openssl/include \
                     external/stlport/stlport \
                     bionic \
+                    bionic/libc/private \
                     $(call include-path-for, libhardware_legacy)/hardware_legacy
 
-LOCAL_CFLAGS :=
-
+LOCAL_CFLAGS := -Werror=format 
 ifdef WIFI_DRIVER_MODULE_PATH
 LOCAL_CFLAGS += -DWIFI_DRIVER_MODULE_PATH=\"$(WIFI_DRIVER_MODULE_PATH)\"
 endif
@@ -47,8 +51,9 @@ ifdef WIFI_DRIVER_LOADER_DELAY
 LOCAL_CFLAGS += -DWIFI_DRIVER_LOADER_DELAY=$(WIFI_DRIVER_LOADER_DELAY)
 endif
 
+
 LOCAL_SHARED_LIBRARIES := libstlport libsysutils libcutils libnetutils \
-                          libcrypto libhardware_legacy
+                          libcrypto libhardware_legacy libmdnssd
 
 ifneq ($(BOARD_HOSTAPD_DRIVER),)
   LOCAL_CFLAGS += -DHAVE_HOSTAPD

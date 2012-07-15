@@ -37,7 +37,9 @@
 #include "ResponseCode.h"
 #include "ThrottleController.h"
 #include "BandwidthController.h"
+#include "IdletimerController.h"
 #include "SecondaryTableController.h"
+#include "oem_iptables_hook.h"
 
 
 TetherController *CommandListener::sTetherCtrl = NULL;
@@ -46,11 +48,12 @@ PppController *CommandListener::sPppCtrl = NULL;
 PanController *CommandListener::sPanCtrl = NULL;
 SoftapController *CommandListener::sSoftapCtrl = NULL;
 BandwidthController * CommandListener::sBandwidthCtrl = NULL;
+IdletimerController * CommandListener::sIdletimerCtrl = NULL;
 ResolverController *CommandListener::sResolverCtrl = NULL;
 SecondaryTableController *CommandListener::sSecondaryTableCtrl = NULL;
 
 CommandListener::CommandListener() :
-                 FrameworkListener("netd") {
+                 FrameworkListener("netd", true) {
     registerCmd(new InterfaceCmd());
     registerCmd(new IpFwdCmd());
     registerCmd(new TetherCmd());
@@ -60,6 +63,7 @@ CommandListener::CommandListener() :
     registerCmd(new PanCmd());
     registerCmd(new SoftapCmd());
     registerCmd(new BandwidthControlCmd());
+    registerCmd(new IdletimerControlCmd());
     registerCmd(new ResolverCmd());
 
     if (!sSecondaryTableCtrl)
@@ -76,8 +80,34 @@ CommandListener::CommandListener() :
         sSoftapCtrl = new SoftapController();
     if (!sBandwidthCtrl)
         sBandwidthCtrl = new BandwidthController();
+    if (!sIdletimerCtrl)
+        sIdletimerCtrl = new IdletimerController();
     if (!sResolverCtrl)
         sResolverCtrl = new ResolverController();
+
+    /*
+     * This is the only time controllers are allowed to touch
+     * top-level chains in iptables.
+     * Each controller should setup custom chains and hook them into
+     * the top-level ones.
+     * THE ORDER IS IMPORTANT. TRIPPLE CHECK EACH setup function.
+     */
+    /* Does DROP in nat: PREROUTING, FORWARD, OUTPUT */
+    setupOemIptablesHook();
+    /* Does DROPs in FORWARD by default */
+    sNatCtrl->setupIptablesHooks();
+    /*
+     * Does REJECT in INPUT, OUTPUT. Does counting also.
+     * No DROP/REJECT allowed later in netfilter-flow hook order.
+     */
+    sBandwidthCtrl->setupIptablesHooks();
+    /*
+     * Counts in nat: PREROUTING, POSTROUTING.
+     * No DROP/REJECT allowed later in netfilter-flow hook order.
+     */
+    sIdletimerCtrl->setupIptablesHooks();
+
+    sBandwidthCtrl->enableBandwidthControl(false);
 }
 
 CommandListener::InterfaceCmd::InterfaceCmd() :
@@ -87,12 +117,12 @@ CommandListener::InterfaceCmd::InterfaceCmd() :
 int CommandListener::writeFile(const char *path, const char *value, int size) {
     int fd = open(path, O_WRONLY);
     if (fd < 0) {
-        LOGE("Failed to open %s: %s", path, strerror(errno));
+        ALOGE("Failed to open %s: %s", path, strerror(errno));
         return -1;
     }
 
     if (write(fd, value, size) != size) {
-        LOGE("Failed to write %s: %s", path, strerror(errno));
+        ALOGE("Failed to write %s: %s", path, strerror(errno));
         close(fd);
         return -1;
     }
@@ -274,7 +304,7 @@ int CommandListener::InterfaceCmd::runCommand(SocketClient *cli,
             }
 
             if (ifc_get_hwaddr(argv[2], (void *) hwaddr)) {
-                LOGW("Failed to retrieve HW addr for %s (%s)", argv[2], strerror(errno));
+                ALOGW("Failed to retrieve HW addr for %s (%s)", argv[2], strerror(errno));
             }
 
             char *addr_s = strdup(inet_ntoa(addr));
@@ -289,7 +319,7 @@ int CommandListener::InterfaceCmd::runCommand(SocketClient *cli,
 
             char *flag_s;
 
-            asprintf(&flag_s, "[%s%s%s%s%s%s]", updown, brdcst, loopbk, ppp, running, multi);
+            asprintf(&flag_s, "%s%s%s%s%s%s", updown, brdcst, loopbk, ppp, running, multi);
 
             char *msg = NULL;
             asprintf(&msg, "%.2x:%.2x:%.2x:%.2x:%.2x:%.2x %s %d %s",
@@ -305,12 +335,12 @@ int CommandListener::InterfaceCmd::runCommand(SocketClient *cli,
             ifc_close();
             return 0;
         } else if (!strcmp(argv[1], "setcfg")) {
-            // arglist: iface addr prefixLength [flags]
+            // arglist: iface addr prefixLength flags
             if (argc < 5) {
                 cli->sendMsg(ResponseCode::CommandSyntaxError, "Missing argument", false);
                 return 0;
             }
-            LOGD("Setting iface cfg");
+            ALOGD("Setting iface cfg");
 
             struct in_addr addr;
             unsigned flags = 0;
@@ -335,43 +365,34 @@ int CommandListener::InterfaceCmd::runCommand(SocketClient *cli,
             }
 
             /* Process flags */
-            /* read from "[XX" arg to "YY]" arg */
-            bool bStarted = false;
             for (int i = 5; i < argc; i++) {
                 char *flag = argv[i];
-                if (!bStarted) {
-                    if (*flag == '[') {
-                        flag++;
-                        bStarted = true;
-                    } else {
-                        continue;
-                    }
-                }
-                int len = strlen(flag);
-                if (flag[len-1] == ']') {
-                    i = argc;  // stop after this loop
-                    flag[len-1] = 0;
-                }
                 if (!strcmp(flag, "up")) {
-                    LOGD("Trying to bring up %s", argv[2]);
+                    ALOGD("Trying to bring up %s", argv[2]);
                     if (ifc_up(argv[2])) {
-                        LOGE("Error upping interface");
+                        ALOGE("Error upping interface");
                         cli->sendMsg(ResponseCode::OperationFailed, "Failed to up interface", true);
                         ifc_close();
                         return 0;
                     }
                 } else if (!strcmp(flag, "down")) {
-                    LOGD("Trying to bring down %s", argv[2]);
+                    ALOGD("Trying to bring down %s", argv[2]);
                     if (ifc_down(argv[2])) {
-                        LOGE("Error downing interface");
+                        ALOGE("Error downing interface");
                         cli->sendMsg(ResponseCode::OperationFailed, "Failed to down interface", true);
                         ifc_close();
                         return 0;
                     }
                 } else if (!strcmp(flag, "broadcast")) {
-                    LOGD("broadcast flag ignored");
+                    // currently ignored
                 } else if (!strcmp(flag, "multicast")) {
-                    LOGD("multicast flag ignored");
+                    // currently ignored
+                } else if (!strcmp(flag, "running")) {
+                    // currently ignored
+                } else if (!strcmp(flag, "loopback")) {
+                    // currently ignored
+                } else if (!strcmp(flag, "point-to-point")) {
+                    // currently ignored
                 } else {
                     cli->sendMsg(ResponseCode::CommandParameterError, "Flag unsupported", false);
                     ifc_close();
@@ -384,7 +405,7 @@ int CommandListener::InterfaceCmd::runCommand(SocketClient *cli,
             return 0;
         } else if (!strcmp(argv[1], "clearaddrs")) {
             // arglist: iface
-            LOGD("Clearing all IP addresses on %s", argv[2]);
+            ALOGD("Clearing all IP addresses on %s", argv[2]);
 
             ifc_clear_addresses(argv[2]);
 
@@ -847,7 +868,7 @@ int CommandListener::ResolverCmd::runCommand(SocketClient *cli, int argc, char *
 int CommandListener::readInterfaceCounters(const char *iface, unsigned long *rx, unsigned long *tx) {
     FILE *fp = fopen("/proc/net/dev", "r");
     if (!fp) {
-        LOGE("Failed to open /proc/net/dev (%s)", strerror(errno));
+        ALOGE("Failed to open /proc/net/dev (%s)", strerror(errno));
         return -1;
     }
 
@@ -914,10 +935,10 @@ int CommandListener::BandwidthControlCmd::runCommand(SocketClient *cli, int argc
         return 0;
     }
 
-    LOGV("bwctrlcmd: argc=%d %s %s ...", argc, argv[0], argv[1]);
+    ALOGV("bwctrlcmd: argc=%d %s %s ...", argc, argv[0], argv[1]);
 
     if (!strcmp(argv[1], "enable")) {
-        int rc = sBandwidthCtrl->enableBandwidthControl();
+        int rc = sBandwidthCtrl->enableBandwidthControl(true);
         sendGenericOkFail(cli, rc);
         return 0;
 
@@ -1154,6 +1175,7 @@ int CommandListener::BandwidthControlCmd::runCommand(SocketClient *cli, int argc
     }
     if (!strcmp(argv[1], "gettetherstats") || !strcmp(argv[1], "gts")) {
         BandwidthController::TetherStats tetherStats;
+        std::string extraProcessingInfo = "";
         if (argc != 4) {
             sendGenericSyntaxError(cli, "gettetherstats <interface0> <interface1>");
             return 0;
@@ -1161,9 +1183,10 @@ int CommandListener::BandwidthControlCmd::runCommand(SocketClient *cli, int argc
 
         tetherStats.ifaceIn = argv[2];
         tetherStats.ifaceOut = argv[3];
-        int rc = sBandwidthCtrl->getTetherStats(tetherStats);
+        int rc = sBandwidthCtrl->getTetherStats(tetherStats, extraProcessingInfo);
         if (rc) {
-            sendGenericOpFailed(cli, "Failed to get tethering stats");
+                extraProcessingInfo.insert(0, "Failed to get tethering stats.\n");
+                sendGenericOpFailed(cli, extraProcessingInfo.c_str());
             return 0;
         }
 
@@ -1175,5 +1198,65 @@ int CommandListener::BandwidthControlCmd::runCommand(SocketClient *cli, int argc
     }
 
     cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown bandwidth cmd", false);
+    return 0;
+}
+
+CommandListener::IdletimerControlCmd::IdletimerControlCmd() :
+    NetdCommand("idletimer") {
+}
+
+int CommandListener::IdletimerControlCmd::runCommand(SocketClient *cli, int argc, char **argv) {
+  // TODO(ashish): Change the error statements
+    if (argc < 2) {
+        cli->sendMsg(ResponseCode::CommandSyntaxError, "Missing argument", false);
+        return 0;
+    }
+
+    ALOGV("idletimerctrlcmd: argc=%d %s %s ...", argc, argv[0], argv[1]);
+
+    if (!strcmp(argv[1], "enable")) {
+      if (0 != sIdletimerCtrl->enableIdletimerControl()) {
+        cli->sendMsg(ResponseCode::CommandSyntaxError, "Missing argument", false);
+      } else {
+        cli->sendMsg(ResponseCode::CommandOkay, "Enable success", false);
+      }
+      return 0;
+
+    }
+    if (!strcmp(argv[1], "disable")) {
+      if (0 != sIdletimerCtrl->disableIdletimerControl()) {
+        cli->sendMsg(ResponseCode::CommandSyntaxError, "Missing argument", false);
+      } else {
+        cli->sendMsg(ResponseCode::CommandOkay, "Disable success", false);
+      }
+      return 0;
+    }
+    if (!strcmp(argv[1], "add")) {
+        if (argc != 4) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Missing argument", false);
+            return 0;
+        }
+        if(0 != sIdletimerCtrl->addInterfaceIdletimer(argv[2], atoi(argv[3]))) {
+          cli->sendMsg(ResponseCode::OperationFailed, "Failed to add interface", false);
+        } else {
+          cli->sendMsg(ResponseCode::CommandOkay,  "Add success", false);
+        }
+        return 0;
+    }
+    if (!strcmp(argv[1], "remove")) {
+        if (argc != 4) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Missing argument", false);
+            return 0;
+        }
+        // ashish: fixme timeout
+        if (0 != sIdletimerCtrl->removeInterfaceIdletimer(argv[2], atoi(argv[3]))) {
+          cli->sendMsg(ResponseCode::OperationFailed, "Failed to remove interface", false);
+        } else {
+          cli->sendMsg(ResponseCode::CommandOkay, "Remove success", false);
+        }
+        return 0;
+    }
+
+    cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown idletimer cmd", false);
     return 0;
 }

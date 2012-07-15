@@ -34,11 +34,8 @@
 extern "C" int system_nosh(const char *command);
 
 #include "ResponseCode.h"
+#include "NetdConstants.h"
 #include "SecondaryTableController.h"
-
-static char IP_PATH[] = "/system/bin/ip";
-static char ADD[] = "add";
-static char DEL[] = "del";
 
 SecondaryTableController::SecondaryTableController() {
     int i;
@@ -69,7 +66,7 @@ int SecondaryTableController::addRoute(SocketClient *cli, char *iface, char *des
     if (tableIndex == -1) {
         tableIndex = findTableNumber(""); // look for an empty slot
         if (tableIndex == -1) {
-            LOGE("Max number of NATed interfaces reached");
+            ALOGE("Max number of NATed interfaces reached");
             errno = ENODEV;
             cli->sendMsg(ResponseCode::OperationFailed, "Max number NATed", true);
             return -1;
@@ -82,8 +79,8 @@ int SecondaryTableController::addRoute(SocketClient *cli, char *iface, char *des
     return modifyRoute(cli, ADD, iface, dest, prefix, gateway, tableIndex);
 }
 
-int SecondaryTableController::modifyRoute(SocketClient *cli, char *action, char *iface, char *dest,
-        int prefix, char *gateway, int tableIndex) {
+int SecondaryTableController::modifyRoute(SocketClient *cli, const char *action, char *iface,
+        char *dest, int prefix, char *gateway, int tableIndex) {
     char *cmd;
 
     if (strcmp("::", gateway) == 0) {
@@ -96,7 +93,7 @@ int SecondaryTableController::modifyRoute(SocketClient *cli, char *action, char 
     }
 
     if (runAndFree(cli, cmd)) {
-        LOGE("ip route %s failed: %s route %s %s/%d via %s dev %s table %d", action,
+        ALOGE("ip route %s failed: %s route %s %s/%d via %s dev %s table %d", action,
                 IP_PATH, action, dest, prefix, gateway, iface, tableIndex+BASE_TABLE_NUMBER);
         errno = ENODEV;
         cli->sendMsg(ResponseCode::OperationFailed, "ip route modification failed", true);
@@ -111,15 +108,45 @@ int SecondaryTableController::modifyRoute(SocketClient *cli, char *action, char 
             mInterfaceTable[tableIndex][0] = 0;
         }
     }
+    modifyRuleCount(tableIndex, action);
     cli->sendMsg(ResponseCode::CommandOkay, "Route modified", false);
     return 0;
+}
+
+void SecondaryTableController::modifyRuleCount(int tableIndex, const char *action) {
+    if (strcmp(action, ADD) == 0) {
+        mInterfaceRuleCount[tableIndex]++;
+    } else {
+        if (--mInterfaceRuleCount[tableIndex] < 1) {
+            mInterfaceRuleCount[tableIndex] = 0;
+            mInterfaceTable[tableIndex][0] = 0;
+        }
+    }
+}
+
+int SecondaryTableController::verifyTableIndex(int tableIndex) {
+    if ((tableIndex < 0) ||
+            (tableIndex >= INTERFACES_TRACKED) ||
+            (mInterfaceTable[tableIndex][0] == 0)) {
+        return -1;
+    } else {
+        return 0;
+    }
+}
+
+const char *SecondaryTableController::getVersion(const char *addr) {
+    if (strchr(addr, ':') != NULL) {
+        return "-6";
+    } else {
+        return "-4";
+    }
 }
 
 int SecondaryTableController::removeRoute(SocketClient *cli, char *iface, char *dest, int prefix,
         char *gateway) {
     int tableIndex = findTableNumber(iface);
     if (tableIndex == -1) {
-        LOGE("Interface not found");
+        ALOGE("Interface not found");
         errno = ENODEV;
         cli->sendMsg(ResponseCode::OperationFailed, "Interface not found", true);
         return -1;
@@ -128,12 +155,46 @@ int SecondaryTableController::removeRoute(SocketClient *cli, char *iface, char *
     return modifyRoute(cli, DEL, iface, dest, prefix, gateway, tableIndex);
 }
 
+int SecondaryTableController::modifyFromRule(int tableIndex, const char *action,
+        const char *addr) {
+    char *cmd;
+
+    if (verifyTableIndex(tableIndex)) {
+        return -1;
+    }
+    asprintf(&cmd, "%s %s rule %s from %s table %d", IP_PATH, getVersion(addr),
+            action, addr, tableIndex + BASE_TABLE_NUMBER);
+    if (runAndFree(NULL, cmd)) {
+        return -1;
+    }
+
+    modifyRuleCount(tableIndex, action);
+    return 0;
+}
+
+int SecondaryTableController::modifyLocalRoute(int tableIndex, const char *action,
+        const char *iface, const char *addr) {
+    char *cmd;
+
+    if (verifyTableIndex(tableIndex)) {
+        return -1;
+    }
+
+    modifyRuleCount(tableIndex, action); // some del's will fail as the iface is already gone.
+
+    asprintf(&cmd, "%s route %s %s dev %s table %d", IP_PATH, action, addr, iface,
+            tableIndex+BASE_TABLE_NUMBER);
+    return runAndFree(NULL, cmd);
+}
+
 int SecondaryTableController::runAndFree(SocketClient *cli, char *cmd) {
     int ret = 0;
     if (strlen(cmd) >= 255) {
-        LOGE("ip command (%s) too long", cmd);
-        errno = E2BIG;
-        cli->sendMsg(ResponseCode::CommandSyntaxError, "Too long", true);
+        if (cli != NULL) {
+            ALOGE("ip command (%s) too long", cmd);
+            errno = E2BIG;
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Too long", true);
+        }
         free(cmd);
         return -1;
     }

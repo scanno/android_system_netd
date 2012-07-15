@@ -46,7 +46,10 @@ public:
     };
 
     BandwidthController();
-    int enableBandwidthControl(void);
+
+    int setupIptablesHooks(void);
+
+    int enableBandwidthControl(bool force);
     int disableBandwidthControl(void);
 
     int setInterfaceSharedQuota(const char *iface, int64_t bytes);
@@ -75,7 +78,7 @@ public:
      * stats should have ifaceIn and ifaceOut initialized.
      * Byte counts should be left to the default (-1).
      */
-    int getTetherStats(TetherStats &stats);
+    int getTetherStats(TetherStats &stats, std::string &extraProcessingInfo);
 
 protected:
     class QuotaInfo {
@@ -93,7 +96,11 @@ protected:
     enum NaughtyAppOp { NaughtyAppOpAdd, NaughtyAppOpRemove };
     enum QuotaType { QuotaUnique, QuotaShared };
     enum RunCmdErrHandling { RunCmdFailureBad, RunCmdFailureOk };
-
+#if LOG_NDEBUG
+    enum IptFailureLog { IptFailShow, IptFailHide };
+#else
+    enum IptFailureLog { IptFailShow, IptFailHide = IptFailShow };
+#endif
     int maninpulateNaughtyApps(int numUids, char *appStrUids[], NaughtyAppOp appOp);
 
     int prepCostlyIface(const char *ifn, QuotaType quotaType);
@@ -108,8 +115,11 @@ protected:
     /* Runs for both ipv4 and ipv6 iptables */
     int runCommands(int numCommands, const char *commands[], RunCmdErrHandling cmdErrHandling);
     /* Runs for both ipv4 and ipv6 iptables, appends -j REJECT --reject-with ...  */
-    static int runIpxtablesCmd(const char *cmd, IptRejectOp rejectHandling);
-    static int runIptablesCmd(const char *cmd, IptRejectOp rejectHandling, IptIpVer iptIpVer);
+    static int runIpxtablesCmd(const char *cmd, IptRejectOp rejectHandling,
+                               IptFailureLog failureHandling = IptFailShow);
+    static int runIptablesCmd(const char *cmd, IptRejectOp rejectHandling, IptIpVer iptIpVer,
+                              IptFailureLog failureHandling = IptFailShow);
+
 
     // Provides strncpy() + check overflow.
     static int StrncpyAndCheck(char *buffer, const char *src, size_t buffSize);
@@ -122,8 +132,10 @@ protected:
     /*
      * stats should have ifaceIn and ifaceOut initialized.
      * fp should be a file to the FORWARD rules of iptables.
+     * extraProcessingInfo: contains raw parsed data, and error info.
      */
-    static int parseForwardChainStats(TetherStats &stats, FILE *fp);
+    static int parseForwardChainStats(TetherStats &stats, FILE *fp,
+                                      std::string &extraProcessingInfo);
 
     /*------------------*/
 
@@ -145,16 +157,14 @@ protected:
     std::list<int /*appUid*/> naughtyAppUids;
 
 private:
+    static const char *IPT_FLUSH_COMMANDS[];
     static const char *IPT_CLEANUP_COMMANDS[];
     static const char *IPT_SETUP_COMMANDS[];
     static const char *IPT_BASIC_ACCOUNTING_COMMANDS[];
 
     /* Alphabetical */
-    static const char ALERT_IPT_TEMPLATE[];
     static const int  ALERT_RULE_POS_IN_COSTLY_CHAIN;
     static const char ALERT_GLOBAL_NAME[];
-    static const char IP6TABLES_PATH[];
-    static const char IPTABLES_PATH[];
     static const int  MAX_CMD_ARGS;
     static const int  MAX_CMD_LEN;
     static const int  MAX_IFACENAME_LEN;

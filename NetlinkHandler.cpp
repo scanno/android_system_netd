@@ -48,7 +48,7 @@ int NetlinkHandler::stop() {
 void NetlinkHandler::onEvent(NetlinkEvent *evt) {
     const char *subsys = evt->getSubsystem();
     if (!subsys) {
-        LOGW("No subsystem found in netlink event");
+        ALOGW("No subsystem found in netlink event");
         return;
     }
 
@@ -68,12 +68,25 @@ void NetlinkHandler::onEvent(NetlinkEvent *evt) {
         } else if (action == evt->NlActionLinkDown) {
             notifyInterfaceLinkChanged(iface, false);
         }
+
     } else if (!strcmp(subsys, "qlog")) {
         const char *alertName = evt->findParam("ALERT_NAME");
         const char *iface = evt->findParam("INTERFACE");
         notifyQuotaLimitReached(alertName, iface);
-    }
 
+    } else if (!strcmp(subsys, "xt_idletimer")) {
+        int action = evt->getAction();
+        const char *iface = evt->findParam("INTERFACE");
+        const char *state = evt->findParam("STATE");
+        if (state)
+            notifyInterfaceActivity(iface, !strcmp("active", state));
+
+#if !LOG_NDEBUG
+    } else if (strcmp(subsys, "platform") && strcmp(subsys, "backlight")) {
+        /* It is not a VSYNC or a backlight event */
+        ALOGV("unexpected event from subsystem %s", subsys);
+#endif
+    }
 }
 
 void NetlinkHandler::notifyInterfaceAdded(const char *name) {
@@ -115,5 +128,15 @@ void NetlinkHandler::notifyQuotaLimitReached(const char *name, const char *iface
     snprintf(msg, sizeof(msg), "limit alert %s %s", name, iface);
 
     mNm->getBroadcaster()->sendBroadcast(ResponseCode::BandwidthControl,
+            msg, false);
+}
+
+void NetlinkHandler::notifyInterfaceActivity(const char *name, bool isActive) {
+    char msg[255];
+
+    snprintf(msg, sizeof(msg), "Iface %s %s", name, isActive ? "active" : "idle");
+    ALOGV("Broadcasting interface activity msg: %s", msg);
+    mNm->getBroadcaster()->sendBroadcast(isActive ? ResponseCode::InterfaceActive
+            : ResponseCode::InterfaceIdle,
             msg, false);
 }

@@ -34,8 +34,6 @@
 
 #include "PppController.h"
 
-extern "C" int logwrap(int argc, const char **argv, int background);
-
 PppController::PppController() {
     mTtys = new TtyCollection();
     mPid = 0;
@@ -56,7 +54,7 @@ int PppController::attachPppd(const char *tty, struct in_addr local,
     pid_t pid;
 
     if (mPid) {
-        LOGE("Multiple PPPD instances not currently supported");
+        ALOGE("Multiple PPPD instances not currently supported");
         errno = EBUSY;
         return -1;
     }
@@ -68,13 +66,13 @@ int PppController::attachPppd(const char *tty, struct in_addr local,
         }
     }
     if (it == mTtys->end()) {
-        LOGE("Invalid tty '%s' specified", tty);
+        ALOGE("Invalid tty '%s' specified", tty);
         errno = -EINVAL;
         return -1;
     }
 
     if ((pid = fork()) < 0) {
-        LOGE("fork failed (%s)", strerror(errno));
+        ALOGE("fork failed (%s)", strerror(errno));
         return -1;
     }
 
@@ -94,9 +92,9 @@ int PppController::attachPppd(const char *tty, struct in_addr local,
         // but not getting a connection
         if (execl("/system/bin/pppd", "/system/bin/pppd", "-detach", dev, "115200",
                   lr, "ms-dns", d1, "ms-dns", d2, "lcp-max-configure", "99999", (char *) NULL)) {
-            LOGE("execl failed (%s)", strerror(errno));
+            ALOGE("execl failed (%s)", strerror(errno));
         }
-        LOGE("Should never get here!");
+        ALOGE("Should never get here!");
         return 0;
     } else {
         mPid = pid;
@@ -107,15 +105,15 @@ int PppController::attachPppd(const char *tty, struct in_addr local,
 int PppController::detachPppd(const char *tty) {
 
     if (mPid == 0) {
-        LOGE("PPPD already stopped");
+        ALOGE("PPPD already stopped");
         return 0;
     }
 
-    LOGD("Stopping PPPD services on port %s", tty);
+    ALOGD("Stopping PPPD services on port %s", tty);
     kill(mPid, SIGTERM);
     waitpid(mPid, NULL, 0);
     mPid = 0;
-    LOGD("PPPD services on port %s stopped", tty);
+    ALOGD("PPPD services on port %s stopped", tty);
     return 0;
 }
 
@@ -134,7 +132,7 @@ int PppController::updateTtyList() {
 
     DIR *d = opendir("/sys/class/tty");
     if (!d) {
-        LOGE("Error opening /sys/class/tty (%s)", strerror(errno));
+        ALOGE("Error opening /sys/class/tty (%s)", strerror(errno));
         return -1;
     }
 

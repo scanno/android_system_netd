@@ -394,7 +394,7 @@ static int wifi_connect_to_hostapd()
 		
 		while (cnt--) {
 			if (access(ifname, F_OK|W_OK)==0) {
-				ALOGD("ifname %s is ready to read/write cnt=%d\n", ifname, cnt);
+				LOGD("ifname %s is ready to read/write cnt=%d\n", ifname, cnt);
 
 				/* Attach to monitor hostapd activity */
 				ctrl_conn = wpa_ctrl_open(ifname);
@@ -451,7 +451,7 @@ static int wpa_ctrl_command_sta(const char *cmd, char *addr, size_t addr_len)
 	if (memcmp(buf, "FAIL", 4) == 0)
 		return -1;
 
-	ALOGD("%s", buf);
+	LOGD("%s", buf);
 
 	pos = buf;
 	while (*pos != '\0' && *pos != '\n')

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (C) 2012 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,21 +14,16 @@
  * limitations under the License.
  */
 
-#ifndef _PAN_CONTROLLER_H
-#define _PAN_CONTROLLER_H
+#ifndef _NETD_CONSTANTS_H
+#define _NETD_CONSTANTS_H
 
-#include <linux/in.h>
 
-class PanController {
-    pid_t mPid;
-
-public:
-    PanController();
-    virtual ~PanController();
-
-    int startPan();
-    int stopPan();
-    bool isPanStarted();
-};
+extern const char * const IPTABLES_PATH;
+extern const char * const IP6TABLES_PATH;
+extern const char * const IP_PATH;
+extern const char * const TC_PATH;
+extern const char * const OEM_SCRIPT_PATH;
+extern const char * const ADD;
+extern const char * const DEL;
 
 #endif
