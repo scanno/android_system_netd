@@ -37,7 +37,8 @@ LOCAL_C_INCLUDES := $(KERNEL_HEADERS) \
                     bionic/libc/private \
                     $(call include-path-for, libhardware_legacy)/hardware_legacy
 
-LOCAL_CFLAGS := -Werror=format 
+LOCAL_CFLAGS := -Werror=format
+
 ifdef WIFI_DRIVER_MODULE_PATH
 LOCAL_CFLAGS += -DWIFI_DRIVER_MODULE_PATH=\"$(WIFI_DRIVER_MODULE_PATH)\"
 endif
@@ -51,7 +52,6 @@ ifdef WIFI_DRIVER_LOADER_DELAY
 LOCAL_CFLAGS += -DWIFI_DRIVER_LOADER_DELAY=$(WIFI_DRIVER_LOADER_DELAY)
 endif
 
-
 LOCAL_SHARED_LIBRARIES := libstlport libsysutils libcutils libnetutils \
                           libcrypto libhardware_legacy libmdnssd
 
@@ -63,7 +63,6 @@ ifeq ($(BOARD_WLAN_DEVICE),ar6002)
   LOCAL_CFLAGS += -DAR6002_WIFI
 endif
 
-
 ifeq ($(BOARD_HAVE_BLUETOOTH),true)
   LOCAL_SHARED_LIBRARIES := $(LOCAL_SHARED_LIBRARIES) libbluedroid
   LOCAL_CFLAGS := $(LOCAL_CFLAGS) -DHAVE_BLUETOOTH
@@ -72,7 +71,6 @@ endif
 ifeq ($(BOARD_WLAN_DEVICE),ar6002)
   LOCAL_SHARED_LIBRARIES += libwpa_client
 endif
-
 
 include $(BUILD_EXECUTABLE)
 

@@ -1,7 +1,5 @@
 /*
  * Copyright (C) 2008 The Android Open Source Project
- * Copyright (c) 2012 Eduardo José Tagle <ejtagle@tutopia.com> 
- *  -Added AR6002 hostAp support
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -493,7 +491,6 @@ SoftapController::SoftapController() {
     mProfileValid = 0;
     ctrl_conn = NULL;
 #endif
-
 }
 
 SoftapController::~SoftapController() {
@@ -580,7 +577,6 @@ int SoftapController::startDriver(char *iface) {
         ALOGE("Softap driver start: %d", ret);
         return ret;
     }
-	
 #ifdef HAVE_HOSTAPD
     ifc_init();
     ret = ifc_up(iface);
@@ -588,7 +584,6 @@ int SoftapController::startDriver(char *iface) {
 #endif
 
 #else
-
 	/* Just bring up the interface */
     ifc_init();
     ret = ifc_up(AR6002AP_IFNAME);
@@ -597,7 +592,6 @@ int SoftapController::startDriver(char *iface) {
 #endif
 
     usleep(AP_DRIVER_START_DELAY);
-	
     ALOGD("Softap driver start: %d", ret);
     return ret;
 }
@@ -614,7 +608,7 @@ int SoftapController::stopDriver(char *iface) {
         iface = mIface;
     }
     *mBuf = 0;
-	
+
 #ifndef AR6002_WIFI
 
 	/* Original way */
@@ -626,7 +620,6 @@ int SoftapController::stopDriver(char *iface) {
         ALOGE("Softap %s down: %d", iface, ret);
     }
 #endif
-
     ret = setCommand(iface, "STOP");
 
 #else
@@ -657,7 +650,7 @@ int SoftapController::startSoftap() {
         ALOGE("Softap startap - failed to open socket");
         return -1;
     }
-	
+
 #ifndef AR6002_WIFI
 
 	/* original way */
@@ -669,7 +662,6 @@ int SoftapController::startSoftap() {
 #endif
     if (!pid) {
 #ifdef HAVE_HOSTAPD
-
         ensure_entropy_file_exists();
         if (execl("/system/bin/hostapd", "/system/bin/hostapd",
                   "-e", WIFI_ENTROPY_FILE,
@@ -691,7 +683,7 @@ int SoftapController::startSoftap() {
            usleep(AP_BSS_START_DELAY);
         }
     }
-	
+
 #else
 
 	/* AR6002 specific */
@@ -752,6 +744,7 @@ int SoftapController::stopSoftap() {
 #ifndef AR6002_WIFI		
 
 	/* Original way */
+
 #ifdef HAVE_HOSTAPD
     ALOGD("Stopping Softap service");
     kill(mPid, SIGTERM);
@@ -761,10 +754,9 @@ int SoftapController::stopSoftap() {
         ALOGE("Softap stopap - failed to open socket");
         return -1;
     }
-	
     *mBuf = 0;
     ret = setCommand(mIface, "AP_BSS_STOP");
-	
+
 #else
 
 	/* Stop hostapd service */
@@ -825,6 +817,7 @@ int SoftapController::setSoftap(int argc, char *argv[]) {
 #ifndef AR6002_WIFI	
 
 	/* Original way */
+
 #ifdef HAVE_HOSTAPD
     char *wbuf = NULL;
     char *fbuf = NULL;
@@ -884,7 +877,6 @@ int SoftapController::setSoftap(int argc, char *argv[]) {
     }
 
 #else
-
     /* Create command line */
     i = addParam(i, "ASCII_CMD", "AP_CFG");
     if (argc > 4) {
@@ -1113,6 +1105,7 @@ wrerr:
 
 #endif
 
+
     return ret;
 }
 
@@ -1142,7 +1135,7 @@ int SoftapController::fwReloadSoftap(int argc, char *argv[])
     char *fwpath;
 
     if (mSock < 0) {
-        ALOGE("Softap fwreload - failed to open socket");
+        ALOGE("Softap fwrealod - failed to open socket");
         return -1;
     }
     if (argc < 4) {
@@ -1155,6 +1148,7 @@ int SoftapController::fwReloadSoftap(int argc, char *argv[])
 #ifndef AR6002_WIFI
 
 	/* original way */
+
     if (strcmp(argv[3], "AP") == 0) {
         fwpath = (char *)wifi_get_fw_path(WIFI_GET_FW_PATH_AP);
     } else if (strcmp(argv[3], "P2P") == 0) {
@@ -1170,7 +1164,7 @@ int SoftapController::fwReloadSoftap(int argc, char *argv[])
     sprintf(mBuf, "FW_PATH=%s", fwpath);
     ret = setCommand(iface, "WL_FW_RELOAD");
 #endif
-	
+
 #else
 
 	/* AR6002 always uses the same fw -- But it must be reloaded with different params */ 
@@ -1206,8 +1200,6 @@ int SoftapController::fwReloadSoftap(int argc, char *argv[])
     else {
         ALOGD("Softap fwReload - Ok");
     }
-
-
     return ret;
 }
 
@@ -1223,6 +1215,7 @@ int SoftapController::clientsSoftap(char **retbuf)
 #ifndef AR6002_WIFI	
 	
 	/* Original way */
+
     *mBuf = 0;
     ret = setCommand(mIface, "AP_GET_STA_LIST", SOFTAP_MAX_BUFFER_SIZE);
     if (ret) {
@@ -1231,7 +1224,7 @@ int SoftapController::clientsSoftap(char **retbuf)
         asprintf(retbuf, "Softap clients:%s", mBuf);
         ALOGD("Softap clients:%s", mBuf);
     }
-	
+
 #else
 
 	/* AR6002 way, using hostapd */
@@ -1251,5 +1244,6 @@ int SoftapController::clientsSoftap(char **retbuf)
 	ret = 0;
 	
 #endif
+
     return ret;
 }
